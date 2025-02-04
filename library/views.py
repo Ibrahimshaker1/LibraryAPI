@@ -1,3 +1,4 @@
+from fuzzywuzzy import fuzz
 from django.contrib.auth import authenticate
 from datetime import datetime
 from rest_framework.views import APIView
@@ -170,7 +171,8 @@ class Books(APIView):
                             book_author.save()
                 return Response(
                     {
-                        "message": "Book is Created"
+                        "message": "Book is Created",
+                        "data": model_to_dict(book)
                     }, status=status.HTTP_200_OK)
             except Exception as e:
                 print(e)
@@ -346,4 +348,129 @@ class Author(APIView):
             return Response({
                 "message": "author no found"
             })
+
+## Search API
+
+
+class SearchAPI(APIView):
+    permission_classes = [AllowAny]
+    def get(self, request, format=None):
+        title = request.GET.get("title", "none")
+        author = request.GET.get("author", "none")
+        book_list = []
+        if title != "none":
+            title = title.title()
+            books = models.Books.objects.filter(title=title)
+            if len(books) > 0:
+                for book in books:
+                    book_list.append(model_to_dict(book))
+                return Response({
+                    "message": "search by title",
+                    "data": book_list
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    "message": "book not found"
+                }, status=status.HTTP_400_BAD_REQUEST)
+        elif author != "none":
+            author = author.lower()
+            author = models.Authors.objects.filter(name=author)
+            if len(author) > 0:
+                books_authors = author[0].book.all()
+                if len(books_authors) > 0:
+                    for book_author in books_authors:
+                        book = book_author.book
+                        book_list.append(model_to_dict(book))
+                    return Response({
+                        "message": "Search by author",
+                        "data": book_list
+                    }, status=status.HTTP_200_OK)
+                else:
+                    return Response({
+                        "message": "author have no books",
+                        "data": book_list
+                    }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    "message": "author do not found",
+                }, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({
+                "message": "wrong query name you can search be 'title' ro 'author'",
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+# add Favorites Book
+class GetFavoriteList(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        user = request.user
+        book_list = []
+        favorite_books = user.favorite_books.all()
+        if len(favorite_books) > 0:
+            for favorite_book in favorite_books:
+                book = favorite_book.book
+                book_list.append(model_to_dict(book))
+            return Response({
+                "message": "user favorite list",
+                "data": book_list
+            })
+        else:
+            return Response({
+                "message": "user do not have favorite book"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+
+class FavoriteBook(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, book_id,format=None):
+        user = request.user
+        user_favorite_books = user.favorite_books.all()
+        if len(user_favorite_books) < 20:
+            book_list = models.Books.objects.filter(id=book_id)
+            if len(book_list) > 0:
+                book = book_list[0]
+                book_users = book.favorite_users.all()
+                for user_f_book in user_favorite_books:
+                    if user_f_book in book_users:
+                        return Response({
+                            "message": "book already in favorites"
+                        }, status=status.HTTP_406_NOT_ACCEPTABLE)
+                favorite = models.Favorites(
+                    user=user,
+                    book=book
+                )
+                favorite.save()
+                sg_book_list = []
+                books = models.Books.objects.exclude(id=book.id)
+                for a_book in books:
+                    if a_book.lag == book.lag:
+                        if a_book.author == book.author:
+                            sg_book_list.append(model_to_dict(a_book))
+                            if len(sg_book_list) == 5:
+                                break
+                        else:
+                            title_score = fuzz.partial_ratio(book.title.lower(), a_book.title.lower())
+                            if title_score > 65:
+                                sg_book_list.append(model_to_dict(a_book))
+                                if len(sg_book_list) == 5:
+                                    break
+
+                return Response({
+                    "message": "added to favorite book list",
+                    "data": model_to_dict(book),
+                    "suggested_books": sg_book_list
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    "message": "Book Not Found"
+                }, status=status.HTTP_404_NOT_FOUND)
+        else:
+            return Response({
+                "message": "you already have 20 favorite book",
+            }, status=status.HTTP_406_NOT_ACCEPTABLE
+            )
+
+
 
