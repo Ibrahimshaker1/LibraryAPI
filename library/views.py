@@ -1,3 +1,4 @@
+import time
 from fuzzywuzzy import fuzz
 from django.contrib.auth import authenticate
 from datetime import datetime
@@ -442,6 +443,7 @@ class FavoriteBook(APIView):
                     book=book
                 )
                 favorite.save()
+                time_one = time.perf_counter()
                 sg_book_list = []
                 books = models.Books.objects.exclude(id=book.id)
                 for a_book in books:
@@ -456,7 +458,9 @@ class FavoriteBook(APIView):
                                 sg_book_list.append(model_to_dict(a_book))
                                 if len(sg_book_list) == 5:
                                     break
-
+                time_two = time.perf_counter()
+                result = time_two - time_one
+                print(f"Time in Second: {result:.6f}")
                 return Response({
                     "message": "added to favorite book list",
                     "data": model_to_dict(book),
